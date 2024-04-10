@@ -13,11 +13,11 @@ BizCardX is a Streamlit application that effortlessly streamlines business card 
 
 
 ### Key Technologies and Skills
-*Python
-*EasyOCR
-*Data Extraction
-*Streamlit (GUI development)
-*PostgreSQL (Database management)
+* Python
+* EasyOCR
+* Data Extraction
+* Streamlit (GUI development)
+* PostgreSQL (Database management)
 
 ### Installation
 
