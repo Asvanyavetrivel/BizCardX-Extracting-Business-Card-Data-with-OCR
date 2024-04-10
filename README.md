@@ -36,7 +36,7 @@ To run this project, you need to install the following packages:
 
 To use this project, follow these steps:
 
-Clone the repository: git clone https://github.com/gopiashokan/BizCardX-Extracting-Business-Card-Data-with-OCR.git
+Clone the repository:https://github.com/Asvanyavetrivel/BizCardX-Extracting-Business-Card-Data-with-OCR/tree/main
 Install the required packages: pip install -r requirements.txt
 Run the Streamlit app: streamlit run app.py
 
