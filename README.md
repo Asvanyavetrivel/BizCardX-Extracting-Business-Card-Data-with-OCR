@@ -6,10 +6,10 @@ BizCardX is a Streamlit application that effortlessly streamlines business card 
 
 ## Table of Contents
 
-*Key Technologies and Skills
-*Installation
-*Usage
-*Features
+* Key Technologies and Skills
+* Installation
+* Usage
+* Features
 
 
 ### Key Technologies and Skills
