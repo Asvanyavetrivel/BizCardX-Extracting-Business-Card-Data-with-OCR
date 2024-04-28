@@ -6,81 +6,81 @@ import pandas as pd
 import numpy as np
 import re
 import io
+import os
 import psycopg2
 
-# Function Definition
-def image_to_text(path):
-  # Open Image
-  input_img= Image.open(path)
-
-  #Convert Image to Array
-  image_arr= np.array(input_img)
-  #OCR Initialization
-  reader= easyocr.Reader(['en'])
-
-  #Perform OCR
-  text= reader.readtext(image_arr, detail= 0)
-  
-  #Return Result
-  return text, input_img
-
-# Function Definition
-def extracted_text(texts):
-  
-  #Initializing an Empty Dictionary
-  extrd_dict = {"NAME":[], "DESIGNATION":[], "COMPANY_NAME":[], "CONTACT":[], "EMAIL":[], "WEBSITE":[],
-                "ADDRESS":[], "PINCODE":[]}
-  
-  # Appending Text to Categories (category 1-Name,category 2-Destination)
-  extrd_dict["NAME"].append(texts[0])
-  extrd_dict["DESIGNATION"].append(texts[1])
-  
-  # Loop through texts starting from the third element
-  for i in range(2,len(texts)):
-    
-    # Check for Contact Information
-    if texts[i].startswith("+") or (texts[i].replace("-","").isdigit() and '-' in texts[i]):
-
-      extrd_dict["CONTACT"].append(texts[i])
-    
-    #Check for Email
-    elif "@" in texts[i] and ".com" in texts[i]:
-      extrd_dict["EMAIL"].append(texts[i])
-    
-    #Check for Website
-    elif "WWW" in texts[i] or "www" in texts[i] or "Www" in texts[i] or "wWw" in texts[i] or "wwW" in texts[i]:
-      small= texts[i].lower()
-      extrd_dict["WEBSITE"].append(small)
-    
-    # Check for Pincode or State Name
-    elif "Tamil Nadu" in texts[i] or "TamilNadu" in texts[i] or texts[i].isdigit():
-      extrd_dict["PINCODE"].append(texts[i])
-    
-    # Check for Company Name
-    elif re.match(r'^[A-Za-z]', texts[i]):
-      extrd_dict["COMPANY_NAME"].append(texts[i])
-    
-    #  Fallback to Address
-    else:
-      remove_colon= re.sub(r'[,;]','',texts[i])
-      extrd_dict["ADDRESS"].append(remove_colon)
 
 
-  # Iterate Over extrd_dict Items
-  for key,value in extrd_dict.items():
+def extract_text(image_path):
 
-    # Concatenate Values and Update Dictionary
-    if len(value)>0:
-      concadenate= " ".join(value)
-      extrd_dict[key] = [concadenate]
-    
-    #Handle Empty Categories
-    else:
-      value = "NA"
-      extrd_dict[key] = [value]
+  input_img=Image.open(image_path)
 
-  # Return the Final Dictionary
-  return extrd_dict
+  #convert image to array format
+  image_array=np.array(input_img)
+
+  reader = easyocr.Reader(['en'], gpu=False)
+  details=reader.readtext(image_array,detail=0)
+
+  return details, input_img
+
+def process_text(details):
+    data = {
+        "name": "",
+        "designation": "",
+        "contact": [],
+        "email": "",
+        "website":[],
+        "street": "",
+        "city": "",
+        "state": "",
+        "pincode": "",
+        "company": []
+    }
+
+    for i in range(len(details)):
+        match1 = re.findall('([0-9]+ [A-Z]+ [A-Za-z]+)., ([a-zA-Z]+). ([a-zA-Z]+)', details[i])
+        match2 = re.findall('([0-9]+ [A-Z]+ [A-Za-z]+)., ([a-zA-Z]+)', details[i])
+        match3 = re.findall('^[E].+[a-z]', details[i])
+        match4 = re.findall('([A-Za-z]+) ([0-9]+)', details[i])
+        match5 = re.findall('([0-9]+ [a-zA-z]+)', details[i])
+        match6 = re.findall('.com$', details[i])
+        match7 = re.findall('([0-9]+)', details[i])
+        if i == 0:
+            data["name"] = details[i]
+        elif i == 1:
+            data["designation"] = details[i]
+        elif '-' in details[i]:
+            data["contact"].append(details[i])
+        elif '@' in details[i]:
+            data["email"] = details[i]
+        elif "WWW" in details[i] or "www" in details[i] or "Www" in details[i] or "wWw" in details[i] or "wwW" in details[i]:
+            small= details[i].lower()
+            data["website"].append(small)
+        elif match6:
+            pass
+        elif match1:
+            data["street"] = match1[0][0]
+            data["city"] = match1[0][1]
+            data["state"] = match1[0][2]
+        elif match2:
+            data["street"] = match2[0][0]
+            data["city"] = match2[0][1]
+        elif match3:
+            data["city"] = match3[0]
+        elif match4:
+            data["state"] = match4[0][0]
+            data["pincode"] = match4[0][1]
+        elif match5:
+            data["street"] = match5[0] + ' St,'
+        elif match7:
+            data["pincode"] = match7[0]
+        else:
+            data["company"].append(details[i])
+
+    data["contact"] = " & ".join(data["contact"])
+    # Joining company names with space
+    data["company"] = " ".join(data["company"])
+    return data
 
 # SETTING PAGE CONFIGURATIONS
 st.set_page_config(page_title="BizCardX: Extracting Business Card Data with OCR | By Asvanya",
@@ -108,6 +108,7 @@ selected = option_menu(None, ["Home","Upload & Extract","Modify","Delete"],
                                "container" : {"max-width": "6000px"},
                                "nav-link-selected": {"background-color": "#6495ED"}})
 
+
 # HOME MENU
 if selected == "Home":
     st.markdown("<h3 style='text-align: left; color: blue;'>Project Overview:</h3>",
@@ -126,280 +127,232 @@ if selected == "Home":
             unsafe_allow_html=True)             
     st.balloons()
 
-# UPLOAD AND EXTRACT MENU
 
 if selected == "Upload & Extract":
+    img = st.file_uploader("Upload the Image", type= ["png","jpg","jpeg"])
+    if img is not None:
+      st.image(img, width= 300)
+      text_image, input_img= extract_text(img)
+      text_dict = process_text(text_image)
 
-  #File Upload Prompt
-  img = st.file_uploader("Upload the Image", type= ["png","jpg","jpeg"])
-
-  if img is not None:
-    # Display Uploaded Image
-    st.image(img, width= 300)
-
-    #Image Processing
-    text_image, input_img= image_to_text(img)
-    
-    #Extracted Text Processing
-    text_dict = extracted_text(text_image)
-
-    if text_dict:
-      st.success("TEXT IS EXTRACTED SUCCESSFULLY")
-    
-    # Display Extracted Information
-    df= pd.DataFrame(text_dict)
-
-
-    #Converting Image to Bytes
-
-    Image_bytes = io.BytesIO()
-    input_img.save(Image_bytes, format= "PNG")
-    image_data = Image_bytes.getvalue()
-
-    #Creating DataFrame for Image Data
-    data = {"IMAGE":[image_data]}
-    df_1 = pd.DataFrame(data)
-   
-    #Concatenate DataFrames
-    concat_df = pd.concat([df,df_1],axis= 1)
-
-    st.dataframe(concat_df)
-    
-    # Save Button
-    button_1 = st.button("Save", use_container_width = True)
-
-    if button_1:
-        # Database Operations:Connection Establishment
-        mydb = psycopg2.connect(host="localhost",
-                                    user="postgres",
-                                    password="2112",
-                                    database= "bizcardx",
-                                    port = "5432"
-                                    )
-
-        cursor = mydb.cursor()
-      #Table Creation
-
-        create_table_query = '''CREATE TABLE IF NOT EXISTS bizcard_details(name varchar(225),
-                                                                            designation varchar(225),
-                                                                            company_name varchar(225),
-                                                                            contact varchar(225),
-                                                                            email varchar(225),
-                                                                            website text,
-                                                                            address text,
-                                                                            pincode varchar(225),
-                                                                            image text)'''
-
-        cursor.execute(create_table_query)
-        mydb.commit()
-
-        # Insert Query
-
-        insert_query = '''INSERT INTO bizcard_details(name, designation, company_name,contact, email, website, address,
-                                                        pincode, image)
-
-                                                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)'''
-
-        datas = concat_df.values.tolist()[0]
-        cursor.execute(insert_query,datas)
-        mydb.commit()
-        
-        # Success Message
-        st.success("SAVED SUCCESSFULLY")
-
-
-# Selection of Method-Modify,Preview
-if selected == "Modify":
-    method=st.selectbox("Select the method",['Preview','Modify'])
-    
-    # Preview Method
-    if method=="Preview":
-
-      # Connect to the PostgreSQL database
-      mydb = psycopg2.connect(host="localhost",
-                                    user="postgres",
-                                    password="2112",
-                                    database= "bizcardx",
-                                    port = "5432"
-                                    )
-
-      cursor = mydb.cursor()
-
-     #SELECT query to fetch all records from the 'bizcard_details' table
-      select_query = "SELECT * FROM bizcard_details"
-
-      cursor.execute(select_query)
-      table = cursor.fetchall()
-      mydb.commit()
+      if text_dict:
+        st.success("TEXT IS EXTRACTED SUCCESSFULLY")
+      df= pd.DataFrame([text_dict])
+      Image_bytes=io.BytesIO()
+      input_img.save(Image_bytes, format="PNG")
+      image_data=Image_bytes.getvalue()
+      data={"Image":[image_data]}
+      df1=pd.DataFrame(data)
+      Concatenate_df=pd.concat([df,df1],axis=1)  #column wise concatination
+      Concatenate_df
       
-       # Display the fetched records as a DataFrame
-      table_df = pd.DataFrame(table, columns=("NAME", "DESIGNATION", "COMPANY_NAME", "CONTACT", "EMAIL", "WEBSITE",
-                                            "ADDRESS", "PINCODE", "IMAGE"))
-      st.dataframe(table_df)
+      button_1 = st.button("Save", use_container_width = True)
 
-    # Modify Method
-    if method == "Modify":
-        # PostgreSQL database-Connection
+      if button_1:
+          
+          mydb = psycopg2.connect(host="localhost",
+                        user="postgres",
+                        password="2112",
+                        database= "bizcard3",
+                        port = "5432"
+                        )
+
+          cursor = mydb.cursor()
+
+
+        # Table creation
+          create_query = '''create table if not exists bizcard_details(Name varchar(100),
+                                Designation varchar(100),  
+                                Contact varchar(100),
+                                Email varchar(100),
+                                Website text,
+                                Street text,
+                                City text,
+                                State text,
+                                Pincode varchar(100),
+                                Company varchar(100),
+                                Image text)'''
+          cursor.execute(create_query)
+          mydb.commit()
+
+          insert_query = '''INSERT into bizcard_details( Name,
+                                                    Designation,
+                                                    Contact,
+                                                    Email,
+                                                    Website,
+                                                    Street,
+                                                    City,
+                                                    State,
+                                                    Pincode,
+                                                    Company,
+                                                    Image)
+                                                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)'''
+                        
+
+          values=Concatenate_df.values.tolist()[0]
+          cursor.execute(insert_query,values)
+          mydb.commit()
+
+          st.success("SAVED SUCCESSFULLY")
+
+if selected == "Modify":
+    method=st.selectbox("Select the method",['Preview','Modify']) 
+
+    if method=="Preview":
         mydb = psycopg2.connect(host="localhost",
-                                        user="postgres",
-                                        password="2112",
-                                        database= "bizcardx",
-                                        port = "5432"
-                                        )
+                        user="postgres",
+                        password="2112",
+                        database= "bizcard3",
+                        port = "5432"
+                        )
 
         cursor = mydb.cursor()
 
-        #SELECT query to fetch all records from the 'bizcard_details' table
         select_query = "SELECT * FROM bizcard_details"
 
         cursor.execute(select_query)
         table = cursor.fetchall()
         mydb.commit()
-        
-        # Display the fetched records as a DataFrame
-        table_df = pd.DataFrame(table, columns=("NAME", "DESIGNATION", "COMPANY_NAME", "CONTACT", "EMAIL", "WEBSITE",
-                                                "ADDRESS", "PINCODE", "IMAGE"))
 
-        col1,col2 = st.columns(2)
-        with col1:
-            # Allow the user to select a name from the fetched records
-            selected_name = st.selectbox("Select the name", table_df["NAME"])
 
-        df_3 = table_df[table_df["NAME"] == selected_name]
-        st.dataframe(df_3)
+        table_df = pd.DataFrame(table, columns=("NAME", "DESIGNATION","CONTACT", "EMAIL", "WEBSITE",
+                                            "STREET","CITY","STATE","PINCODE","COMPANY","IMAGE"))
+        st.dataframe(table_df)
 
-        df_4 = df_3.copy()
-        
-
-        # Display the details of the selected record and provide input fields to modify them
-        col1,col2 = st.columns(2)
-        with col1:
-         mo_name = st.text_input("Name", df_3["NAME"].unique()[0])
-         mo_desi = st.text_input("Designation", df_3["DESIGNATION"].unique()[0])
-         mo_com_name = st.text_input("Company_name", df_3["COMPANY_NAME"].unique()[0])
-         mo_contact = st.text_input("Contact", df_3["CONTACT"].unique()[0])
-         mo_email = st.text_input("Email", df_3["EMAIL"].unique()[0])
-
-         df_4["NAME"] = mo_name
-         df_4["DESIGNATION"] = mo_desi
-         df_4["COMPANY_NAME"] = mo_com_name
-         df_4["CONTACT"] = mo_contact
-         df_4["EMAIL"] = mo_email
-
-        with col2:
-      
-            mo_website = st.text_input("Website", df_3["WEBSITE"].unique()[0])
-            mo_addre = st.text_input("Address", df_3["ADDRESS"].unique()[0])
-            mo_pincode = st.text_input("Pincode", df_3["PINCODE"].unique()[0])
-            mo_image = st.text_input("Image", df_3["IMAGE"].unique()[0])
-
-            df_4["WEBSITE"] = mo_website
-            df_4["ADDRESS"] = mo_addre
-            df_4["PINCODE"] = mo_pincode
-            df_4["IMAGE"] = mo_image
-            
-            # Update the modified record in the DataFrame
-            st.dataframe(df_4)
-
-        col1,col2= st.columns(2)
-        with col1:
-            button_3 = st.button("Modify", use_container_width = True)
-
-        if button_3:
-
+    if method == "Modify":
             mydb = psycopg2.connect(host="localhost",
-                                            user="postgres",
-                                            password="2112",
-                                            database= "bizcardx",
-                                            port = "5432"
-                                            )
+                            user="postgres",
+                            password="2112",
+                            database= "bizcard3",
+                            port = "5432"
+                            )
 
             cursor = mydb.cursor()
-             
-            # Delete the existing record corresponding to the selected name from the database
-            cursor.execute(f"DELETE FROM bizcard_details WHERE NAME = '{selected_name}'")
+
+            select_query = "SELECT * FROM bizcard_details"
+
+            cursor.execute(select_query)
+            table = cursor.fetchall()
             mydb.commit()
 
-       
-            # Insert the modified record into the database
-            insert_query = '''INSERT INTO bizcard_details(name, designation, company_name,contact, email, website, address,
-                                                            pincode, image)
+            table_df = pd.DataFrame(table, columns=("NAME", "DESIGNATION","CONTACT", "EMAIL", "WEBSITE",
+                                                "STREET","CITY","STATE","PINCODE","COMPANY","IMAGE"))
+            st.dataframe(table_df)
 
-                                                            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)'''
 
-            datas = df_4.values.tolist()[0]
-            cursor.execute(insert_query,datas)
-            mydb.commit()
+            col1,col2 = st.columns(2)
+            with col1:
+                # Allow the user to select a name from the fetched records
+                selected_name = st.selectbox("Select the Name", table_df["NAME"])
+
+            df_3 = table_df[table_df["NAME"] == selected_name]
+            st.markdown("<h3 style='text-align: left; color: blue;'>Before Modification:</h3>",
+            unsafe_allow_html=True)
+            st.dataframe(df_3)
+
+            df_4 = df_3.copy()
+
+            col1,col2 = st.columns(2)
+            with col1:
+                mo_name = st.text_input("Name", df_3["NAME"].unique()[0])
+                mo_desi = st.text_input("Designation", df_3["DESIGNATION"].unique()[0])
+                mo_contact = st.text_input("Contact", df_3["CONTACT"].unique()[0])
+                mo_email = st.text_input("Email", df_3["EMAIL"].unique()[0])
+                mo_website = st.text_input("Website", df_3["WEBSITE"].unique()[0])
+
+                df_4["NAME"] = mo_name
+                df_4["DESIGNATION"] = mo_desi
+                df_4["CONTACT"] = mo_contact
+                df_4["EMAIL"] = mo_email
+                df_4["WEBSITE"] = mo_website
+
+            with col2:
+        
+                
+                mo_street = st.text_input("Street", df_3["STREET"].unique()[0])
+                mo_city = st.text_input("City", df_3["CITY"].unique()[0])
+                mo_state = st.text_input("State", df_3["STATE"].unique()[0])
+                mo_pincode = st.text_input("Pincode", df_3["PINCODE"].unique()[0])
+                mo_com = st.text_input("Company", df_3["COMPANY"].unique()[0])
+                #mo_image = st.text_input("Image", df_3["IMAGE"].unique()[0])
+
             
-             # Display a success message indicating the modification was successful
-            st.success("MODIFYED SUCCESSFULLY")
+                df_4["STREET"] = mo_street
+                df_4["CITY"] = mo_city
+                df_4["STATE"] = mo_state
+                df_4["PINCODE"] = mo_pincode
+                df_4["COMPANY"] = mo_com
+                #df_4["IMAGE"] = mo_image
+                
+            col1,col2= st.columns(2)
+            with col1:
+                button_3 = st.button("Modify", use_container_width = True)  
+            st.markdown("<h3 style='text-align: left; color: blue;'>After Modification:</h3>",
+            unsafe_allow_html=True)
+            st.dataframe(df_4)
 
 if selected == "Delete":
-  
-  # Connection to the Database
-  mydb = psycopg2.connect(host="localhost",
-                                    user="postgres",
-                                    password="2112",
-                                    database= "bizcardx",
-                                    port = "5432"
-                                    )
-
-  cursor = mydb.cursor()
-
-  col1,col2 = st.columns(2)
-  with col1:
     
-    # User Input - Selecting Name:
-    select_query = "SELECT NAME FROM bizcard_details"
+    mydb = psycopg2.connect(host="localhost",
+                        user="postgres",
+                        password="2112",
+                        database= "bizcard3",
+                        port = "5432"
+                        )
 
-    cursor.execute(select_query)
-    table1 = cursor.fetchall()
-    mydb.commit()
+    cursor = mydb.cursor()
 
-    names = []
-
-    for i in table1:
-      names.append(i[0])
-
-    name_select = st.selectbox("Select the name", names)
-
-  with col2:
-    # Filtering - Selecting Designation
-    select_query = f"SELECT DESIGNATION FROM bizcard_details WHERE NAME ='{name_select}'"
-
-    cursor.execute(select_query)
-    table2 = cursor.fetchall()
-    mydb.commit()
-
-    designations = []
-
-    for j in table2:
-      designations.append(j[0])
-
-    designation_select = st.selectbox("Select the designation", options = designations)
-  
-  # Confirmation and Deletion
-  if name_select and designation_select:
-    col1,col2,col3 = st.columns(3)
-
+    col1,col2 = st.columns(2)
     with col1:
-      st.write(f"Selected Name : {name_select}")
-      st.write("")
-      st.write("")
-      st.write("")
-      st.write(f"Selected Designation : {designation_select}")
+    
+        select_query = "SELECT NAME FROM bizcard_details"
 
-    with col2:
-      st.write("")
-      st.write("")
-      st.write("")
-      st.write("")
-
-      remove = st.button("Delete", use_container_width= True)
-
-      if remove:
-
-        cursor.execute(f"DELETE FROM bizcard_details WHERE NAME ='{name_select}' AND DESIGNATION = '{designation_select}'")
+        cursor.execute(select_query)
+        table1 = cursor.fetchall()
         mydb.commit()
 
-        st.warning("DELETED")
+        names = []
+        for i in table1:
+         names.append(i[0])
+
+        name_select = st.selectbox("Select the name", names)
+
+    with col2:
+        select_query = f"SELECT DESIGNATION FROM bizcard_details WHERE NAME ='{name_select}'"
+        cursor.execute(select_query)
+        table2 = cursor.fetchall()
+        mydb.commit()
+
+        designations = []
+
+        for j in table2:
+         designations.append(j[0])
+        designation_select = st.selectbox("Select the designation", options = designations)
+        
+        if name_select and designation_select:
+            col1,col2,col3 = st.columns(3)
+            
+
+            with col1:
+                st.write(f"Selected Name : {name_select}")
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write(f"Selected Designation : {designation_select}")
+
+            with col2:
+                    st.write("")
+                    st.write("")
+                    st.write("")
+                    st.write("")
+                    remove = st.button("Delete", use_container_width= True)
+
+                    if remove:
+
+                        cursor.execute(f"DELETE FROM bizcard_details WHERE NAME ='{name_select}' AND DESIGNATION = '{designation_select}'")
+                        mydb.commit()
+
+                        st.warning("DELETED")
+
+          
+       
