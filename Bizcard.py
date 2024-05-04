@@ -1,24 +1,34 @@
+# Streamlit library-building interactive web applications
 import streamlit as st
 from streamlit_option_menu import option_menu
+# extract text from images
 import easyocr
+# opening, manipulating, and saving many different image file formats
 from PIL import Image
+# data manipulation and analysis
 import pandas as pd
+#  numerical computations
 import numpy as np
+# regular expressions-pattern matching and manipulation of strings.
 import re
+# working with streams of data.
 import io
+# teracting with the operating system, such as manipulating file paths and directories
 import os
+#  PostgreSQL database
 import psycopg2
 
 
 
 def extract_text(image_path):
-
+  # Image Opening
   input_img=Image.open(image_path)
 
-  #convert image to array format
+  #Image to Array Conversion
   image_array=np.array(input_img)
-
+  # EasyOCR Reader Initialization
   reader = easyocr.Reader(['en'], gpu=False)
+  #Text Extraction
   details=reader.readtext(image_array,detail=0)
 
   return details, input_img
@@ -29,22 +39,24 @@ def process_text(details):
         "designation": "",
         "contact": [],
         "email": "",
-        "website":[],
+        "website":"",
         "street": "",
         "city": "",
         "state": "",
         "pincode": "",
         "company": []
     }
-
+    # Iteration over details list:
     for i in range(len(details)):
-        match1 = re.findall('([0-9]+ [A-Z]+ [A-Za-z]+)., ([a-zA-Z]+). ([a-zA-Z]+)', details[i])
-        match2 = re.findall('([0-9]+ [A-Z]+ [A-Za-z]+)., ([a-zA-Z]+)', details[i])
-        match3 = re.findall('^[E].+[a-z]', details[i])
-        match4 = re.findall('([A-Za-z]+) ([0-9]+)', details[i])
-        match5 = re.findall('([0-9]+ [a-zA-z]+)', details[i])
-        match6 = re.findall('.com$', details[i])
-        match7 = re.findall('([0-9]+)', details[i])
+
+        #Pattern Matching using Regular Expressions
+        match1 = re.findall('([0-9]+ [A-Z]+ [A-Za-z]+)., ([a-zA-Z]+). ([a-zA-Z]+)', details[i]) #"123 ABC Street, City, State"
+        match2 = re.findall('([0-9]+ [A-Z]+ [A-Za-z]+)., ([a-zA-Z]+)', details[i]) # "123 ABC Street, City"
+        match3 = re.findall('^[E].+[a-z]', details[i]) # starting with "E" and ending with a lowercase letter
+        match4 = re.findall('([A-Za-z]+) ([0-9]+)', details[i]) # State Pincode
+        match5 = re.findall('([0-9]+ [a-zA-z]+)', details[i]) # 123 Street"
+        match6 = re.findall('.com$', details[i]) # ending with ".com"
+        match7 = re.findall('([0-9]+)', details[i]) # only numbers (potentially for pincode).
         if i == 0:
             data["name"] = details[i]
         elif i == 1:
@@ -53,9 +65,10 @@ def process_text(details):
             data["contact"].append(details[i])
         elif '@' in details[i]:
             data["email"] = details[i]
-        elif "WWW" in details[i] or "www" in details[i] or "Www" in details[i] or "wWw" in details[i] or "wwW" in details[i]:
-            small= details[i].lower()
-            data["website"].append(small)
+        elif "www " in details[i].lower() or "www." in details[i].lower():
+            data["website"] = details[i]
+        elif "WWW" in details[i]:
+            data["website"] = details[i] + "." + details[i+1]
         elif match6:
             pass
         elif match1:
@@ -76,7 +89,8 @@ def process_text(details):
             data["pincode"] = match7[0]
         else:
             data["company"].append(details[i])
-
+    # Data Formatting
+    # Joining contact names with &
     data["contact"] = " & ".join(data["contact"])
     # Joining company names with space
     data["company"] = " ".join(data["company"])
@@ -129,20 +143,27 @@ if selected == "Home":
 
 
 if selected == "Upload & Extract":
+    # File Uploader Component:
     img = st.file_uploader("Upload the Image", type= ["png","jpg","jpeg"])
+    # Image Display:
     if img is not None:
       st.image(img, width= 300)
+      # Text Extraction and Processing
       text_image, input_img= extract_text(img)
       text_dict = process_text(text_image)
-
+      # Check for Extracted Text
       if text_dict:
         st.success("TEXT IS EXTRACTED SUCCESSFULLY")
+      # Create DataFrame
       df= pd.DataFrame([text_dict])
+      # Convert Image to Bytes
       Image_bytes=io.BytesIO()
       input_img.save(Image_bytes, format="PNG")
       image_data=Image_bytes.getvalue()
+      # Create DataFrame for Image Data
       data={"Image":[image_data]}
       df1=pd.DataFrame(data)
+      # Concatenate DataFrames
       Concatenate_df=pd.concat([df,df1],axis=1)  #column wise concatination
       Concatenate_df
       
@@ -244,22 +265,24 @@ if selected == "Modify":
             with col1:
                 # Allow the user to select a name from the fetched records
                 selected_name = st.selectbox("Select the Name", table_df["NAME"])
-
+            # Filtering the DataFram
             df_3 = table_df[table_df["NAME"] == selected_name]
+            # Displaying the Dataframe Before Modification:
             st.markdown("<h3 style='text-align: left; color: blue;'>Before Modification:</h3>",
             unsafe_allow_html=True)
             st.dataframe(df_3)
-
+            # Copying the DataFrame:
             df_4 = df_3.copy()
 
             col1,col2 = st.columns(2)
             with col1:
+                # Text Inputs for Modification:
                 mo_name = st.text_input("Name", df_3["NAME"].unique()[0])
                 mo_desi = st.text_input("Designation", df_3["DESIGNATION"].unique()[0])
                 mo_contact = st.text_input("Contact", df_3["CONTACT"].unique()[0])
                 mo_email = st.text_input("Email", df_3["EMAIL"].unique()[0])
                 mo_website = st.text_input("Website", df_3["WEBSITE"].unique()[0])
-
+                # Modifying the DataFrame
                 df_4["NAME"] = mo_name
                 df_4["DESIGNATION"] = mo_desi
                 df_4["CONTACT"] = mo_contact
@@ -286,6 +309,7 @@ if selected == "Modify":
                 
             col1,col2= st.columns(2)
             with col1:
+                # Button for Modification:
                 button_3 = st.button("Modify", use_container_width = True)  
             st.markdown("<h3 style='text-align: left; color: blue;'>After Modification:</h3>",
             unsafe_allow_html=True)
@@ -353,6 +377,3 @@ if selected == "Delete":
                         mydb.commit()
 
                         st.warning("DELETED")
-
-          
-       
